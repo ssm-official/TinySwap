@@ -119,6 +119,12 @@ export function SwapCard() {
   const handleApprove = async () => {
     if (!address) return;
 
+    // Check if user has balance
+    if (!sellTokenBalance?.value || sellTokenBalance.value === BigInt(0)) {
+      setError(`You don't have any ${sellToken.symbol} to swap`);
+      return;
+    }
+
     setIsSwapping(true);
     setError(null);
 
@@ -193,6 +199,14 @@ export function SwapCard() {
     }
   };
 
+  // Check if user has enough balance
+  const hasInsufficientBalance = useCallback(() => {
+    if (!sellAmount || parseFloat(sellAmount) === 0) return false;
+    if (!sellTokenBalance?.value) return false;
+    const sellAmountWei = BigInt(parseTokenAmount(sellAmount, sellToken.decimals));
+    return sellTokenBalance.value < sellAmountWei;
+  }, [sellAmount, sellToken.decimals, sellTokenBalance?.value]);
+
   const getButtonText = () => {
     if (!isConnected) return 'Connect Wallet';
     if (isApproving) return 'Approving...';
@@ -200,6 +214,7 @@ export function SwapCard() {
     if (isConfirming) return 'Swapping...';
     if (isLoading) return 'Fetching Quote...';
     if (!sellAmount || parseFloat(sellAmount) === 0) return 'Enter Amount';
+    if (hasInsufficientBalance()) return `Insufficient ${sellToken.symbol}`;
     if (needsApproval()) return `Approve ${sellToken.symbol}`;
     if (error) return 'Swap Anyway';
     return 'Swap';
@@ -209,6 +224,7 @@ export function SwapCard() {
     if (!isConnected) return false;
     if (isSwapping || isConfirming || isLoading || isApproving) return true;
     if (!sellAmount || parseFloat(sellAmount) === 0) return true;
+    if (hasInsufficientBalance()) return true;
     return false;
   };
 
