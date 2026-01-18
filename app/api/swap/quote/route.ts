@@ -25,34 +25,39 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  // Use 0x API v1 (simpler approval flow, no permit2 signatures needed)
+  // Convert slippage from decimal (0.01) to bps (100)
+  const slippageBps = Math.round(parseFloat(slippagePercentage) * 10000).toString();
+
   const params = new URLSearchParams({
+    chainId: '1',
     sellToken,
     buyToken,
     sellAmount,
-    slippagePercentage,
+    slippageBps,
   });
 
   if (takerAddress) {
-    params.append('takerAddress', takerAddress);
+    params.append('taker', takerAddress);
   }
 
   // Add integrator fee if configured
   const feeRecipient = process.env.FEE_RECIPIENT;
   const feeBps = process.env.FEE_BPS;
   if (feeRecipient && feeBps) {
-    params.append('feeRecipient', feeRecipient);
-    params.append('buyTokenPercentageFee', (parseInt(feeBps) / 10000).toString());
+    params.append('swapFeeRecipient', feeRecipient);
+    params.append('swapFeeBps', feeBps);
+    params.append('swapFeeToken', buyToken);
   }
 
   const headers: HeadersInit = {
     'Content-Type': 'application/json',
     '0x-api-key': apiKey,
+    '0x-version': 'v2',
   };
 
   try {
     const response = await fetch(
-      `${ZEROX_API_URL}/swap/v1/quote?${params.toString()}`,
+      `${ZEROX_API_URL}/swap/permit2/quote?${params.toString()}`,
       { headers }
     );
 
@@ -60,27 +65,39 @@ export async function GET(request: NextRequest) {
 
     if (!response.ok) {
       return NextResponse.json(
-        { error: data.reason || data.validationErrors?.[0]?.reason || 'Failed to fetch quote' },
+        { error: data.reason || data.message || 'Failed to fetch quote' },
         { status: response.status }
       );
     }
 
-    // v1 response format - direct transaction data
-    return NextResponse.json({
-      sellToken: data.sellTokenAddress,
-      buyToken: data.buyTokenAddress,
+    // Return the full response with permit2 data
+    const result = {
+      sellToken: data.sellToken,
+      buyToken: data.buyToken,
       sellAmount: data.sellAmount,
       buyAmount: data.buyAmount,
-      price: data.price,
-      estimatedGas: data.estimatedGas,
-      gas: data.gas,
-      gasPrice: data.gasPrice,
-      to: data.to,
-      data: data.data,
-      value: data.value,
-      allowanceTarget: data.allowanceTarget,
-      sources: data.sources,
-    });
+      minBuyAmount: data.minBuyAmount,
+      price: data.buyAmount && data.sellAmount
+        ? (parseFloat(data.buyAmount) / parseFloat(data.sellAmount)).toString()
+        : '0',
+      estimatedGas: data.transaction?.gas || data.gas || '0',
+      gas: data.transaction?.gas || data.gas,
+      gasPrice: data.transaction?.gasPrice || data.gasPrice,
+      to: data.transaction?.to,
+      data: data.transaction?.data,
+      value: data.transaction?.value || '0',
+      allowanceTarget: data.issues?.allowance?.spender || '0x000000000022d473030f116ddee9f6b43ac78ba3',
+      // Include permit2 data for signing
+      permit2: data.permit2,
+      // Debug info
+      _debug: {
+        hasPermit2: !!data.permit2,
+        hasEip712: !!data.permit2?.eip712,
+        transactionTo: data.transaction?.to,
+      }
+    };
+
+    return NextResponse.json(result);
   } catch (error) {
     console.error('Quote API error:', error);
     return NextResponse.json(

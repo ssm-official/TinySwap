@@ -23,8 +23,8 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  // Use 0x API v1 for price quotes
   const params = new URLSearchParams({
+    chainId: '1',
     sellToken,
     buyToken,
     sellAmount,
@@ -33,11 +33,12 @@ export async function GET(request: NextRequest) {
   const headers: HeadersInit = {
     'Content-Type': 'application/json',
     '0x-api-key': apiKey,
+    '0x-version': 'v2',
   };
 
   try {
     const response = await fetch(
-      `${ZEROX_API_URL}/swap/v1/price?${params.toString()}`,
+      `${ZEROX_API_URL}/swap/permit2/price?${params.toString()}`,
       { headers }
     );
 
@@ -45,20 +46,20 @@ export async function GET(request: NextRequest) {
 
     if (!response.ok) {
       return NextResponse.json(
-        { error: data.reason || data.validationErrors?.[0]?.reason || 'Failed to fetch price' },
+        { error: data.reason || data.message || 'Failed to fetch price' },
         { status: response.status }
       );
     }
 
-    // v1 response format
     return NextResponse.json({
-      sellToken: data.sellTokenAddress,
-      buyToken: data.buyTokenAddress,
+      sellToken: data.sellToken,
+      buyToken: data.buyToken,
       sellAmount: data.sellAmount,
       buyAmount: data.buyAmount,
-      price: data.price,
-      estimatedGas: data.estimatedGas,
-      sources: data.sources,
+      price: data.buyAmount && data.sellAmount
+        ? (parseFloat(data.buyAmount) / parseFloat(data.sellAmount)).toString()
+        : '0',
+      estimatedGas: data.gas || '0',
     });
   } catch (error) {
     console.error('Price API error:', error);

@@ -1,15 +1,15 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { useAccount, useBalance, useSendTransaction, useWaitForTransactionReceipt, useReadContract, useWriteContract } from 'wagmi';
-import { erc20Abi } from 'viem';
+import { useAccount, useBalance, useSendTransaction, useWaitForTransactionReceipt, useReadContract, useWriteContract, useSignTypedData } from 'wagmi';
+import { erc20Abi, concat } from 'viem';
 import { Token, TOKENS } from '@/lib/tokens';
 import { getSwapPrice, getSwapTransaction, formatTokenAmount, parseTokenAmount, isNativeEth } from '@/lib/swap';
 import { TokenSelector } from './TokenSelector';
 import { ConnectButton } from './ConnectButton';
 
-// 0x Exchange Proxy on Ethereum mainnet (for v1 API)
-const EXCHANGE_PROXY = '0xdef1c0ded9bec7f1a1670819833240f027b25eff' as `0x${string}`;
+// Permit2 contract address (for 0x v2 API)
+const PERMIT2_ADDRESS = '0x000000000022d473030f116ddee9f6b43ac78ba3' as `0x${string}`;
 
 export function SwapCard() {
   const { address, isConnected } = useAccount();
@@ -50,16 +50,17 @@ export function SwapCard() {
     address: address,
   });
 
-  // Check token allowance for 0x Exchange Proxy (not Permit2)
+  // Check token allowance for Permit2 contract
   const { data: allowance, refetch: refetchAllowance } = useReadContract({
     address: isNativeEth(sellToken.address) ? undefined : sellToken.address as `0x${string}`,
     abi: erc20Abi,
     functionName: 'allowance',
-    args: address ? [address, EXCHANGE_PROXY] : undefined,
+    args: address ? [address, PERMIT2_ADDRESS] : undefined,
   });
 
   const { writeContractAsync: approveToken, isPending: isApproving } = useWriteContract();
   const { sendTransactionAsync, data: txHash } = useSendTransaction();
+  const { signTypedDataAsync } = useSignTypedData();
 
   const { isLoading: isConfirming, isSuccess: isConfirmed } = useWaitForTransactionReceipt({
     hash: txHash,
@@ -187,7 +188,7 @@ export function SwapCard() {
         address: sellToken.address as `0x${string}`,
         abi: erc20Abi,
         functionName: 'approve',
-        args: [EXCHANGE_PROXY, approvalAmount],
+        args: [PERMIT2_ADDRESS, approvalAmount],
       });
 
       setTimeout(() => refetchAllowance(), 2000);
@@ -226,14 +227,43 @@ export function SwapCard() {
         slippagePercentage: 0.01,
       });
 
+      // Debug: show what we got from API
+      console.log('Swap response:', swapTx);
+      console.log('Debug info:', swapTx._debug);
+
       if (!swapTx.to || !swapTx.data) {
         throw new Error('Invalid transaction data from API');
       }
 
-      // With v1 API, just send the transaction directly - no signature needed
+      let txData = swapTx.data as `0x${string}`;
+
+      // For ERC-20 swaps, we need to sign the permit2 data
+      if (!isNativeEth(sellToken.address)) {
+        if (!swapTx.permit2?.eip712) {
+          throw new Error(`Permit2 data missing. Debug: hasPermit2=${swapTx._debug?.hasPermit2}, hasEip712=${swapTx._debug?.hasEip712}`);
+        }
+
+        const permit2Data = swapTx.permit2.eip712;
+        console.log('Signing permit2 data:', permit2Data);
+
+        // Sign the permit2 EIP-712 typed data
+        const signature = await signTypedDataAsync({
+          types: permit2Data.types,
+          domain: permit2Data.domain,
+          primaryType: permit2Data.primaryType,
+          message: permit2Data.message,
+        });
+
+        console.log('Got signature:', signature);
+
+        // Append signature to transaction data
+        txData = concat([swapTx.data as `0x${string}`, signature as `0x${string}`]);
+        console.log('Final tx data length:', txData.length);
+      }
+
       await sendTransactionAsync({
         to: swapTx.to as `0x${string}`,
-        data: swapTx.data as `0x${string}`,
+        data: txData,
         value: BigInt(swapTx.value || '0'),
         gas: swapTx.gas ? BigInt(swapTx.gas) : undefined,
       });

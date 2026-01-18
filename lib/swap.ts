@@ -41,6 +41,11 @@ export interface SwapTransaction {
   permit2?: {
     eip712: Permit2Eip712;
   };
+  _debug?: {
+    hasPermit2: boolean;
+    hasEip712: boolean;
+    transactionTo: string;
+  };
 }
 
 interface GetQuoteParams {
