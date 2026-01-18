@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useAccount, useBalance, useSendTransaction, useWaitForTransactionReceipt, useReadContract, useWriteContract } from 'wagmi';
-import { erc20Abi, maxUint256 } from 'viem';
+import { erc20Abi } from 'viem';
 import { Token, TOKENS, NATIVE_ETH_ADDRESS } from '@/lib/tokens';
 import { getSwapPrice, getSwapTransaction, formatTokenAmount, parseTokenAmount, isNativeEth } from '@/lib/swap';
 import { TokenSelector } from './TokenSelector';
@@ -123,15 +123,18 @@ export function SwapCard() {
     setError(null);
 
     try {
+      // Use a large but not max value (some tokens like USDC don't like maxUint256)
+      const approvalAmount = BigInt('0xffffffffffffffffffffffffffffffff'); // 128-bit max
+
       await approveToken({
         address: sellToken.address as `0x${string}`,
         abi: erc20Abi,
         functionName: 'approve',
-        args: [PERMIT2_ADDRESS, maxUint256],
+        args: [PERMIT2_ADDRESS, approvalAmount],
       });
 
       // Refetch allowance after approval
-      await refetchAllowance();
+      setTimeout(() => refetchAllowance(), 2000);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Approval failed';
       setError(message);
