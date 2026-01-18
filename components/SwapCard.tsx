@@ -301,10 +301,15 @@ export function SwapCard() {
       let txData = swapTx.data as `0x${string}`;
 
       // For ERC-20 token swaps (not native ETH), we need to sign the Permit2 data
-      if (!isNativeEth(sellToken.address) && swapTx.permit2?.eip712) {
-        const permit2Data = swapTx.permit2.eip712;
+      if (!isNativeEth(sellToken.address)) {
+        if (!swapTx.permit2?.eip712) {
+          // This is the problem - no permit2 data from API
+          setError('API did not return permit2 signature data. This is required for ERC-20 swaps.');
+          setIsSwapping(false);
+          return;
+        }
 
-        console.log('Permit2 EIP-712 data:', JSON.stringify(permit2Data, null, 2));
+        const permit2Data = swapTx.permit2.eip712;
 
         // Sign the Permit2 EIP-712 typed data
         const signature = await signTypedDataAsync({
@@ -314,12 +319,8 @@ export function SwapCard() {
           message: permit2Data.message,
         });
 
-        console.log('Signature:', signature);
-
         // Append signature directly to transaction data (no length prefix for 0x v2)
         txData = concat([swapTx.data as `0x${string}`, signature as `0x${string}`]);
-      } else if (!isNativeEth(sellToken.address)) {
-        console.warn('No permit2 data returned from API for ERC-20 swap');
       }
 
       await sendTransactionAsync({
