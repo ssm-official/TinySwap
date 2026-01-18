@@ -14,6 +14,17 @@ export interface SwapQuote {
   estimatedGas: string;
 }
 
+export interface Permit2Eip712 {
+  types: Record<string, Array<{ name: string; type: string }>>;
+  domain: {
+    name: string;
+    chainId: number;
+    verifyingContract: `0x${string}`;
+  };
+  primaryType: string;
+  message: Record<string, unknown>;
+}
+
 export interface SwapTransaction {
   to: string;
   data: string;
@@ -24,7 +35,12 @@ export interface SwapTransaction {
   buyToken: string;
   sellAmount: string;
   buyAmount: string;
+  price?: string;
+  estimatedGas?: string;
   allowanceTarget: string;
+  permit2?: {
+    eip712: Permit2Eip712;
+  };
 }
 
 interface GetQuoteParams {

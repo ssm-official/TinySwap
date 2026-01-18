@@ -1,8 +1,8 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { useAccount, useBalance, useSendTransaction, useWaitForTransactionReceipt, useReadContract, useWriteContract } from 'wagmi';
-import { erc20Abi } from 'viem';
+import { useAccount, useBalance, useSendTransaction, useWaitForTransactionReceipt, useReadContract, useWriteContract, useSignTypedData } from 'wagmi';
+import { erc20Abi, concat, numberToHex, size } from 'viem';
 import { Token, TOKENS, NATIVE_ETH_ADDRESS } from '@/lib/tokens';
 import { getSwapPrice, getSwapTransaction, formatTokenAmount, parseTokenAmount, isNativeEth } from '@/lib/swap';
 import { TokenSelector } from './TokenSelector';
@@ -11,13 +11,37 @@ import { ConnectButton } from './ConnectButton';
 // Permit2 contract address (same on all chains)
 const PERMIT2_ADDRESS = '0x000000000022d473030f116ddee9f6b43ac78ba3' as `0x${string}`;
 
+// Type for permit2 EIP-712 data from 0x API
+interface Permit2Eip712 {
+  types: Record<string, Array<{ name: string; type: string }>>;
+  domain: {
+    name: string;
+    chainId: number;
+    verifyingContract: `0x${string}`;
+  };
+  primaryType: string;
+  message: Record<string, unknown>;
+}
+
+interface QuoteData {
+  price: string;
+  estimatedGas: string;
+  to?: string;
+  data?: string;
+  value?: string;
+  gas?: string;
+  permit2?: {
+    eip712: Permit2Eip712;
+  };
+}
+
 export function SwapCard() {
   const { address, isConnected } = useAccount();
   const [sellToken, setSellToken] = useState<Token>(TOKENS[0]); // ETH
   const [buyToken, setBuyToken] = useState<Token>(TOKENS[2]); // USDC
   const [sellAmount, setSellAmount] = useState('');
   const [buyAmount, setBuyAmount] = useState('');
-  const [quote, setQuote] = useState<{ price: string; estimatedGas: string } | null>(null);
+  const [quote, setQuote] = useState<QuoteData | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isSwapping, setIsSwapping] = useState(false);
@@ -62,6 +86,7 @@ export function SwapCard() {
 
   const { writeContractAsync: approveToken, isPending: isApproving } = useWriteContract();
   const { sendTransactionAsync, data: txHash } = useSendTransaction();
+  const { signTypedDataAsync } = useSignTypedData();
 
   const { isLoading: isConfirming, isSuccess: isConfirmed } = useWaitForTransactionReceipt({
     hash: txHash,
@@ -74,7 +99,7 @@ export function SwapCard() {
     }
   }, [txHash]);
 
-  // Fetch quote when sell amount changes
+  // Fetch quote when sell amount changes - use full quote endpoint to get permit2 data
   const fetchQuote = useCallback(async () => {
     if (!sellAmount || parseFloat(sellAmount) === 0) {
       setBuyAmount('');
@@ -88,22 +113,50 @@ export function SwapCard() {
     try {
       const sellAmountWei = parseTokenAmount(sellAmount, sellToken.decimals);
 
-      const quoteData = await getSwapPrice({
-        sellToken,
-        buyToken,
-        sellAmount: sellAmountWei,
-        takerAddress: address,
-      });
+      // For ERC-20 tokens, we need address for permit2 data; for price quotes we can skip it
+      if (address && !isNativeEth(sellToken.address)) {
+        // Use getSwapTransaction to get full quote with permit2 data
+        const quoteData = await getSwapTransaction({
+          sellToken,
+          buyToken,
+          sellAmount: sellAmountWei,
+          takerAddress: address,
+          slippagePercentage: 0.01,
+        });
 
-      if (!quoteData.buyAmount) {
-        throw new Error('No quote available for this pair');
+        if (!quoteData.buyAmount) {
+          throw new Error('No quote available for this pair');
+        }
+
+        setBuyAmount(formatTokenAmount(quoteData.buyAmount, buyToken.decimals));
+        setQuote({
+          price: quoteData.price || '0',
+          estimatedGas: quoteData.estimatedGas || '0',
+          to: quoteData.to,
+          data: quoteData.data,
+          value: quoteData.value,
+          gas: quoteData.gas,
+          permit2: quoteData.permit2,
+        });
+      } else {
+        // For native ETH or when not connected, just get a price quote
+        const quoteData = await getSwapPrice({
+          sellToken,
+          buyToken,
+          sellAmount: sellAmountWei,
+          takerAddress: address,
+        });
+
+        if (!quoteData.buyAmount) {
+          throw new Error('No quote available for this pair');
+        }
+
+        setBuyAmount(formatTokenAmount(quoteData.buyAmount, buyToken.decimals));
+        setQuote({
+          price: quoteData.price || '0',
+          estimatedGas: quoteData.estimatedGas || '0',
+        });
       }
-
-      setBuyAmount(formatTokenAmount(quoteData.buyAmount, buyToken.decimals));
-      setQuote({
-        price: quoteData.price || '0',
-        estimatedGas: quoteData.estimatedGas || '0',
-      });
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to fetch quote';
       setError(message);
@@ -212,6 +265,12 @@ export function SwapCard() {
   const handleSwap = async () => {
     if (!address || !sellAmount || parseFloat(sellAmount) === 0) return;
 
+    // Check if user has ETH for gas
+    if (!ethBalance?.value || ethBalance.value === BigInt(0)) {
+      setError(`You need ETH to pay for gas (~$${estimatedGasCostUsd()}). Send some ETH to your wallet first.`);
+      return;
+    }
+
     // Check if we need approval first
     if (needsApproval()) {
       await handleApprove();
@@ -224,6 +283,7 @@ export function SwapCard() {
     try {
       const sellAmountWei = parseTokenAmount(sellAmount, sellToken.decimals);
 
+      // Always fetch fresh transaction data to ensure permit2 data is current
       const swapTx = await getSwapTransaction({
         sellToken,
         buyToken,
@@ -236,9 +296,29 @@ export function SwapCard() {
         throw new Error('Invalid transaction data from API');
       }
 
+      let txData = swapTx.data as `0x${string}`;
+
+      // For ERC-20 token swaps (not native ETH), we need to sign the Permit2 data
+      if (!isNativeEth(sellToken.address) && swapTx.permit2?.eip712) {
+        const permit2Data = swapTx.permit2.eip712;
+
+        // Sign the Permit2 EIP-712 typed data
+        const signature = await signTypedDataAsync({
+          types: permit2Data.types,
+          domain: permit2Data.domain,
+          primaryType: permit2Data.primaryType as 'PermitWitnessTransferFrom',
+          message: permit2Data.message,
+        });
+
+        // Append signature to transaction data
+        // The signature needs to be appended with its length prefix
+        const signatureLength = numberToHex(size(signature as `0x${string}`), { size: 32 });
+        txData = concat([swapTx.data as `0x${string}`, signatureLength, signature as `0x${string}`]);
+      }
+
       await sendTransactionAsync({
         to: swapTx.to as `0x${string}`,
-        data: swapTx.data as `0x${string}`,
+        data: txData,
         value: isNativeEth(sellToken.address) ? BigInt(swapTx.value || '0') : BigInt(0),
         gas: swapTx.gas ? BigInt(swapTx.gas) : undefined,
       });
