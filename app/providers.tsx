@@ -8,7 +8,7 @@ import '@rainbow-me/rainbowkit/styles.css';
 import { useState } from 'react';
 
 const config = getDefaultConfig({
-  appName: 'SilverTable Swap',
+  appName: 'TinySwap',
   projectId: process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID || 'YOUR_PROJECT_ID',
   chains: [mainnet],
   ssr: true,

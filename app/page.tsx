@@ -23,7 +23,7 @@ export default function Home() {
                 />
               </svg>
             </div>
-            <span className="text-xl font-bold text-white">SilverTable</span>
+            <span className="text-xl font-bold text-white">TinySwap</span>
           </div>
           <ConnectButton />
         </div>

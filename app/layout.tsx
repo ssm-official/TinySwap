@@ -14,7 +14,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "SilverTable Swap",
+  title: "TinySwap",
   description: "Swap tokens with the best rates across DEXs",
 };
 
