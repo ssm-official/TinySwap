@@ -1,36 +1,101 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# TinySwap
+
+A minimal, open-source token swap interface for Ethereum. Get the best rates across decentralized exchanges powered by 0x Protocol.
+
+## Features
+
+- **Wallet Connection** - Connect with MetaMask, Coinbase Wallet, WalletConnect, and more via RainbowKit
+- **Best Rates** - 0x aggregates liquidity from Uniswap, SushiSwap, Curve, and 100+ DEXs
+- **Token Support** - Swap ETH, WETH, USDC, USDT, DAI, WBTC (easily extensible)
+- **Real-time Quotes** - Live price updates as you type
+- **Fee Support** - Optional integrator fees for monetization
+
+## Tech Stack
+
+- [Next.js 16](https://nextjs.org/) - React framework with App Router
+- [Tailwind CSS v4](https://tailwindcss.com/) - Styling
+- [RainbowKit](https://www.rainbowkit.com/) - Wallet connection
+- [wagmi](https://wagmi.sh/) - React hooks for Ethereum
+- [viem](https://viem.sh/) - TypeScript Ethereum library
+- [0x Swap API](https://0x.org/) - DEX aggregation
 
 ## Getting Started
 
-First, run the development server:
+### 1. Clone the repo
+
+```bash
+git clone https://github.com/ssm-official/TinySwap.git
+cd TinySwap
+```
+
+### 2. Install dependencies
+
+```bash
+npm install
+```
+
+### 3. Set up environment variables
+
+```bash
+cp .env.example .env.local
+```
+
+Edit `.env.local` and add your API keys:
+
+```env
+# Required - Get from https://cloud.walletconnect.com/
+NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID=your_project_id
+
+# Required - Get FREE from https://dashboard.0x.org/
+ZEROX_API_KEY=your_0x_api_key
+
+# Optional - Your wallet to receive swap fees
+FEE_RECIPIENT=0xYourWalletAddress
+FEE_BPS=50  # 0.5% fee (50 basis points)
+```
+
+### 4. Run the development server
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3000](http://localhost:3000) in your browser.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Deployment
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Deploy to Vercel with one click:
 
-## Learn More
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/ssm-official/TinySwap&env=NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID,ZEROX_API_KEY,FEE_RECIPIENT,FEE_BPS)
 
-To learn more about Next.js, take a look at the following resources:
+Or deploy manually:
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+```bash
+npm install -g vercel
+vercel --prod
+```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+Don't forget to add your environment variables in the Vercel dashboard.
 
-## Deploy on Vercel
+## Adding More Tokens
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+Edit `lib/tokens.ts` to add more tokens:
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+```typescript
+{
+  address: '0x...', // Token contract address
+  symbol: 'TOKEN',
+  name: 'Token Name',
+  decimals: 18,
+  logoURI: 'https://...',
+}
+```
+
+## License
+
+MIT - Use it however you want.
+
+## Acknowledgments
+
+- [0x Protocol](https://0x.org/) for the swap aggregation API
+- [RainbowKit](https://www.rainbowkit.com/) for the wallet connection UI
