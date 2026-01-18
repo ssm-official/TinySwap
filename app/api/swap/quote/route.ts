@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 const ZEROX_API_KEY = process.env.ZEROX_API_KEY || '';
+const FEE_RECIPIENT = process.env.FEE_RECIPIENT || '';
+const FEE_BPS = process.env.FEE_BPS || '0';
 
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
@@ -31,6 +33,13 @@ export async function GET(request: NextRequest) {
 
     if (takerAddress) {
       params.append('taker', takerAddress);
+    }
+
+    // Add fee parameters if configured
+    if (FEE_RECIPIENT && FEE_BPS && parseInt(FEE_BPS) > 0) {
+      params.append('swapFeeRecipient', FEE_RECIPIENT);
+      params.append('swapFeeBps', FEE_BPS);
+      params.append('swapFeeToken', buyToken); // Take fee from output token
     }
 
     const response = await fetch(
