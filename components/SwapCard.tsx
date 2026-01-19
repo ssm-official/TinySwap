@@ -40,8 +40,10 @@ const CHAIN_WRAPPED_SYMBOLS: Record<number, string> = {
 };
 
 export function SwapCard() {
-  const { address, isConnected } = useAccount();
-  const chainId = useChainId();
+  const { address, isConnected, chain } = useAccount();
+  const defaultChainId = useChainId();
+  // Use the connected wallet's chain, fallback to default chain
+  const chainId = chain?.id ?? defaultChainId;
   const tokens = getTokensByChain(chainId);
   const [sellToken, setSellToken] = useState<Token>(tokens[0]);
   const [buyToken, setBuyToken] = useState<Token>(tokens[1] || tokens[0]);
@@ -95,16 +97,30 @@ export function SwapCard() {
     return () => clearInterval(interval);
   }, [chainId]);
 
-  const { data: sellTokenBalance } = useBalance({
+  const { data: sellTokenBalance, refetch: refetchSellBalance } = useBalance({
     address: address,
     token: isNativeEth(sellToken.address) ? undefined : sellToken.address as `0x${string}`,
     chainId: chainId,
+    query: {
+      enabled: !!address && !!chainId,
+    },
   });
 
-  const { data: nativeBalance } = useBalance({
+  const { data: nativeBalance, refetch: refetchNativeBalance } = useBalance({
     address: address,
     chainId: chainId,
+    query: {
+      enabled: !!address && !!chainId,
+    },
   });
+
+  // Refetch balances when chain or sell token changes
+  useEffect(() => {
+    if (address && chainId) {
+      refetchSellBalance();
+      refetchNativeBalance();
+    }
+  }, [chainId, address, sellToken.address, refetchSellBalance, refetchNativeBalance]);
 
   // Check token allowance for Permit2 contract
   const { data: allowance, refetch: refetchAllowance } = useReadContract({
@@ -167,7 +183,7 @@ export function SwapCard() {
     } finally {
       setIsLoading(false);
     }
-  }, [sellAmount, sellToken, buyToken, address]);
+  }, [sellAmount, sellToken, buyToken, address, chainId]);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -272,8 +288,9 @@ export function SwapCard() {
       return;
     }
 
+    const nativeSymbol = CHAIN_NATIVE_SYMBOLS[chainId] || 'ETH';
     if (!nativeBalance?.value || nativeBalance.value === BigInt(0)) {
-      setError(`You need ETH to pay for gas (~$${estimatedGasCostUsd()}). Send some ETH to your wallet first.`);
+      setError(`You need ${nativeSymbol} to pay for gas (~$${estimatedGasCostUsd()}). Send some ${nativeSymbol} to your wallet first.`);
       return;
     }
 
@@ -302,8 +319,9 @@ export function SwapCard() {
   const handleSwap = async () => {
     if (!address || !sellAmount || parseFloat(sellAmount) === 0) return;
 
+    const nativeSymbol = CHAIN_NATIVE_SYMBOLS[chainId] || 'ETH';
     if (!nativeBalance?.value || nativeBalance.value === BigInt(0)) {
-      setError(`You need ETH to pay for gas (~$${estimatedGasCostUsd()}). Send some ETH to your wallet first.`);
+      setError(`You need ${nativeSymbol} to pay for gas (~$${estimatedGasCostUsd()}). Send some ${nativeSymbol} to your wallet first.`);
       return;
     }
 
@@ -404,10 +422,20 @@ export function SwapCard() {
     return false;
   };
 
+  // Get chain name for display
+  const nativeSymbol = CHAIN_NATIVE_SYMBOLS[chainId] || 'ETH';
+
   return (
     <div className="w-full max-w-md rounded-2xl border border-zinc-800 bg-zinc-900 p-6 shadow-xl">
       <div className="mb-6 flex items-center justify-between">
-        <h2 className="text-xl font-bold text-white">Swap</h2>
+        <div className="flex items-center gap-3">
+          <h2 className="text-xl font-bold text-white">Swap</h2>
+          {isConnected && chain && (
+            <span className="rounded-full bg-zinc-800 px-2.5 py-1 text-xs font-medium text-zinc-300">
+              {chain.name}
+            </span>
+          )}
+        </div>
         <button
           onClick={() => setShowSettings(!showSettings)}
           className={`flex items-center gap-1 rounded-lg px-3 py-1.5 text-sm transition-colors ${showSettings ? 'bg-zinc-700 text-white' : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700 hover:text-white'}`}
