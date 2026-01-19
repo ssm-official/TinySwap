@@ -27,6 +27,8 @@ export function SwapCard() {
   const [slippage, setSlippage] = useState<number>(0.5); // Default 0.5%
   const [customSlippage, setCustomSlippage] = useState<string>('');
   const [showSettings, setShowSettings] = useState(false);
+  const [isUsdMode, setIsUsdMode] = useState(false);
+  const [usdAmount, setUsdAmount] = useState('');
 
   // Fetch ETH price for USD conversions
   useEffect(() => {
@@ -161,6 +163,37 @@ export function SwapCard() {
 
     return usdValue.toLocaleString('en-US', { style: 'currency', currency: 'USD' });
   }, [ethPrice]);
+
+  // Convert USD amount to token amount
+  const getTokenFromUsd = useCallback((usdValue: string, token: Token): string => {
+    if (!usdValue || parseFloat(usdValue) === 0 || !ethPrice) return '';
+
+    const usd = parseFloat(usdValue);
+    let tokenAmount = 0;
+
+    if (isNativeEth(token.address) || token.symbol === 'WETH') {
+      tokenAmount = usd / ethPrice;
+    } else if (token.symbol === 'USDC' || token.symbol === 'USDT' || token.symbol === 'DAI') {
+      tokenAmount = usd;
+    } else if (token.symbol === 'WBTC') {
+      tokenAmount = usd / (ethPrice * 20);
+    } else {
+      return '';
+    }
+
+    return tokenAmount.toString();
+  }, [ethPrice]);
+
+  // Handle USD input changes
+  const handleUsdChange = useCallback((value: string) => {
+    setUsdAmount(value);
+    const tokenValue = getTokenFromUsd(value, sellToken);
+    if (tokenValue) {
+      setSellAmount(tokenValue);
+    } else {
+      setSellAmount('');
+    }
+  }, [getTokenFromUsd, sellToken]);
 
   const estimatedGasCostUsd = useCallback((): string => {
     const approvalGas = 50000;
@@ -383,41 +416,96 @@ export function SwapCard() {
       <div className="rounded-xl bg-zinc-800/50 p-4">
         <div className="mb-2 flex items-center justify-between">
           <span className="text-sm text-zinc-400">You pay</span>
-          {isConnected && sellTokenBalance?.value !== undefined && (
-            <button
-              onClick={handleMaxClick}
-              className="text-sm text-purple-400 hover:text-purple-300"
-            >
-              Balance: {formatTokenAmount(sellTokenBalance.value.toString(), sellToken.decimals)} {sellToken.symbol}
-            </button>
-          )}
+          <div className="flex items-center gap-2">
+            {isConnected && sellTokenBalance?.value !== undefined && (
+              <button
+                onClick={handleMaxClick}
+                className="text-sm text-purple-400 hover:text-purple-300"
+              >
+                Balance: {formatTokenAmount(sellTokenBalance.value.toString(), sellToken.decimals)} {sellToken.symbol}
+              </button>
+            )}
+          </div>
         </div>
         <div className="flex items-center gap-3">
           <div className="flex-1">
-            <input
-              type="text"
-              inputMode="decimal"
-              placeholder="0"
-              value={sellAmount}
-              onChange={(e) => {
-                const value = e.target.value;
-                if (/^[0-9]*\.?[0-9]*$/.test(value)) {
-                  setSellAmount(value);
-                }
-              }}
-              className="w-full bg-transparent text-3xl font-medium text-white outline-none placeholder:text-zinc-600"
-            />
-            {sellAmount && parseFloat(sellAmount) > 0 && (
-              <div className="mt-1 text-sm text-zinc-500">
-                {getUsdValue(sellAmount, sellToken)}
-              </div>
+            {isUsdMode ? (
+              <>
+                <div className="flex items-center">
+                  <span className="text-3xl font-medium text-zinc-500">$</span>
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    placeholder="0"
+                    value={usdAmount}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      if (/^[0-9]*\.?[0-9]*$/.test(value)) {
+                        handleUsdChange(value);
+                      }
+                    }}
+                    className="w-full bg-transparent text-3xl font-medium text-white outline-none placeholder:text-zinc-600"
+                  />
+                </div>
+                {sellAmount && parseFloat(sellAmount) > 0 && (
+                  <div className="mt-1 text-sm text-zinc-500">
+                    {parseFloat(sellAmount).toFixed(6)} {sellToken.symbol}
+                  </div>
+                )}
+              </>
+            ) : (
+              <>
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  placeholder="0"
+                  value={sellAmount}
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    if (/^[0-9]*\.?[0-9]*$/.test(value)) {
+                      setSellAmount(value);
+                      setUsdAmount('');
+                    }
+                  }}
+                  className="w-full bg-transparent text-3xl font-medium text-white outline-none placeholder:text-zinc-600"
+                />
+                {sellAmount && parseFloat(sellAmount) > 0 && (
+                  <div className="mt-1 text-sm text-zinc-500">
+                    {getUsdValue(sellAmount, sellToken)}
+                  </div>
+                )}
+              </>
             )}
           </div>
-          <TokenSelector
-            selectedToken={sellToken}
-            onSelect={setSellToken}
-            excludeToken={buyToken}
-          />
+          <div className="flex flex-col items-end gap-2">
+            <TokenSelector
+              selectedToken={sellToken}
+              onSelect={(token) => {
+                setSellToken(token);
+                if (isUsdMode && usdAmount) {
+                  handleUsdChange(usdAmount);
+                }
+              }}
+              excludeToken={buyToken}
+            />
+            <button
+              onClick={() => {
+                setIsUsdMode(!isUsdMode);
+                if (!isUsdMode && sellAmount) {
+                  // Switching to USD mode - calculate USD value
+                  const usdVal = getUsdValue(sellAmount, sellToken);
+                  const numericUsd = usdVal.replace(/[^0-9.]/g, '');
+                  setUsdAmount(numericUsd);
+                } else if (isUsdMode) {
+                  // Switching to token mode - clear USD amount
+                  setUsdAmount('');
+                }
+              }}
+              className="rounded-lg bg-zinc-700 px-2 py-1 text-xs text-zinc-400 hover:bg-zinc-600 hover:text-white transition-colors"
+            >
+              {isUsdMode ? sellToken.symbol : 'USD'}
+            </button>
+          </div>
         </div>
       </div>
 
