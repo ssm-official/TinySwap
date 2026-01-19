@@ -40,7 +40,6 @@ export async function GET(request: NextRequest) {
     const slippageBps = Math.max(1, Math.round(parseFloat(slippagePercentage) * 10000));
 
     const params = new URLSearchParams({
-      chainId,
       sellToken,
       buyToken,
       sellAmount,

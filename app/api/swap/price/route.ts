@@ -32,7 +32,6 @@ export async function GET(request: NextRequest) {
 
   try {
     const params = new URLSearchParams({
-      chainId,
       sellToken,
       buyToken,
       sellAmount,
