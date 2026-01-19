@@ -1,4 +1,5 @@
 # TinySwap
+#### By SSM
 
 A minimal, open-source multi-chain token swap interface. Get the best rates across decentralized exchanges powered by 0x Protocol.
 
